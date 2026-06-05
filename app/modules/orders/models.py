@@ -130,3 +130,11 @@ class OrderItem(Base):
     product = relationship(
         "Product",
     )
+
+    @property
+    def product_name(self) -> str | None:
+        return (
+            self.product.name
+            if self.product
+            else None
+        )

@@ -14,9 +14,11 @@ from app.dependencies.database import (
 from app.modules.auth.models import User
 
 from app.modules.orders import service
+from app.modules.orders.models import OrderStatus
 
 from app.modules.orders.schemas import (
     OrderCreate,
+    OrderEdit,
     OrderRead,
     OrderUpdateStatus,
 )
@@ -37,6 +39,29 @@ def list_orders(
 ):
     return service.get_all(db)
 
+@router.get(
+    "/active",
+    response_model=list[OrderRead],
+)
+def active_orders(
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    return service.get_active_orders(db)
+
+@router.get(
+    "/status/{status}",
+    response_model=list[OrderRead],
+)
+def orders_by_status(
+    status: OrderStatus,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    return service.get_by_status(
+        db,
+        status,
+    )
 
 @router.get(
     "/{order_id}",
@@ -69,6 +94,21 @@ def create_order(
         current_user.id,
     )
 
+@router.patch(
+    "/{order_id}",
+    response_model=OrderRead,
+)
+def edit_order(
+    order_id: int,
+    payload: OrderEdit,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    return service.edit_order(
+        db,
+        order_id,
+        payload,
+    )
 
 @router.put(
     "/{order_id}",
