@@ -25,7 +25,9 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:4200",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -36,6 +38,10 @@ app.include_router(categories_router)
 app.include_router(products_router)
 app.include_router(orders_router)
 app.include_router(users_router)
+
+@app.get("/")
+def root():
+    return {"message": "RestaurantApp API está corriendo. Ve a /docs"}
 
 @app.get("/health")
 def health():

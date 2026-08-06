@@ -1,0 +1,2115 @@
+
+================================================================================
+FILE: app/__init__.py
+================================================================================
+
+
+================================================================================
+FILE: app/__pycache__/__init__.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/__pycache__/database.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/__pycache__/main.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/__pycache__/seed.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/core/__init__.py
+================================================================================
+
+
+================================================================================
+FILE: app/core/__pycache__/__init__.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/core/__pycache__/config.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/core/__pycache__/security.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/core/config.py
+================================================================================
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    SECRET_KEY: str
+    ALGORITHM: str
+    ACCESS_TOKEN_EXPIRE_MINUTES: int
+
+    model_config = SettingsConfigDict(
+        env_file=".env"
+    )
+
+
+settings = Settings()
+
+================================================================================
+FILE: app/core/security.py
+================================================================================
+from datetime import datetime, timedelta, timezone
+from jose import jwt
+from passlib.context import CryptContext
+from app.core.config import settings
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto",)
+
+
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+def verify_password(plain_password: str,hashed_password: str,) -> bool:
+    return pwd_context.verify(plain_password, hashed_password,)
+
+def create_access_token(data: dict) -> str:
+    payload = data.copy()
+    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    payload.update({"exp": expire,})
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM,)
+
+def decode_token(token: str) -> dict:
+    return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM],)
+
+================================================================================
+FILE: app/database.py
+================================================================================
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, DeclarativeBase
+
+SQLITE_URL = "sqlite:///./restaurant.db"
+
+engine = create_engine(
+    SQLITE_URL,
+    connect_args={"check_same_thread": False},
+)
+
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine,
+)
+
+class Base(DeclarativeBase):
+    pass
+
+================================================================================
+FILE: app/dependencies/__init__.py
+================================================================================
+
+
+================================================================================
+FILE: app/dependencies/__pycache__/__init__.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/dependencies/__pycache__/database.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/dependencies/database.py
+================================================================================
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError
+from sqlalchemy.orm import Session
+
+from app.core.security import decode_token
+from app.database import SessionLocal
+
+
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl="/api/auth/login"
+)
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db),):
+    # Import local para evitar circular import
+    from app.modules.auth.models import User
+
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Token inválido o expirado",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    try:
+        payload = decode_token(token)
+        user_id: str | None = payload.get("sub")
+
+        if user_id is None:
+            raise credentials_exception
+
+    except JWTError:
+        raise credentials_exception
+
+    user = (
+        db.query(User)
+        .filter(User.id == int(user_id))
+        .first()
+    )
+
+    if user is None:
+        raise credentials_exception
+
+    return user
+
+================================================================================
+FILE: app/main.py
+================================================================================
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from app.database import Base, engine
+from app.modules.auth.models import User
+from app.modules.categories.models import Category
+from app.modules.products.models import Product
+from app.modules.orders.models import Order, OrderItem
+
+# Routers
+from app.modules.auth.router import router as auth_router
+from app.modules.categories.router import router as categories_router
+from app.modules.products.router import router as products_router
+from app.modules.orders.router import router as orders_router
+from app.modules.users.router import (
+    router as users_router,
+)
+
+
+Base.metadata.create_all(bind=engine)
+
+app = FastAPI(
+    title="RestaurantApp API",
+    version="1.0.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(auth_router)
+app.include_router(categories_router)
+app.include_router(products_router)
+app.include_router(orders_router)
+app.include_router(users_router)
+
+@app.get("/health")
+def health():
+    return {
+        "status": "ok",
+        "version": "1.0.0",
+    }
+
+================================================================================
+FILE: app/modules/__init__.py
+================================================================================
+
+
+================================================================================
+FILE: app/modules/__pycache__/__init__.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/modules/auth/__pycache__/models.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/modules/auth/__pycache__/router.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/modules/auth/__pycache__/schemas.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/modules/auth/__pycache__/service.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/modules/auth/models.py
+================================================================================
+from datetime import datetime, timezone
+from sqlalchemy import DateTime, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column
+from app.database import Base
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True,)
+    name: Mapped[str] = mapped_column(String, nullable=False,)
+    email: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False,)
+    password_hash: Mapped[str] = mapped_column(String, nullable=False,)
+    role: Mapped[str] = mapped_column(String, default="waiter",)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc),)
+
+================================================================================
+FILE: app/modules/auth/router.py
+================================================================================
+from fastapi import APIRouter, Depends, status
+from sqlalchemy.orm import Session
+from app.dependencies.database import get_db
+from app.modules.auth.schemas import (TokenResponse, UserCreate, UserLogin, UserRead,)
+from app.modules.auth.service import (login_user, register_user,)
+
+router = APIRouter(prefix="/api/auth", tags=["auth"],)
+
+@router.post(
+    "/register",
+    response_model=UserRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def register(
+    payload: UserCreate,
+    db: Session = Depends(get_db),
+):
+    return register_user(
+        db,
+        payload,
+    )
+
+@router.post(
+    "/login",
+    response_model=TokenResponse,
+)
+def login(
+    payload: UserLogin,
+    db: Session = Depends(get_db),
+):
+    token = login_user(
+        db,
+        payload.email,
+        payload.password,
+    )
+
+    return TokenResponse(
+        access_token=token,
+    )
+
+================================================================================
+FILE: app/modules/auth/schemas.py
+================================================================================
+from pydantic import BaseModel, EmailStr, Field
+
+class UserCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=100)
+    email: EmailStr
+    password: str = Field(min_length=6, max_length=100,)
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+class UserRead(BaseModel):
+    id: int
+    name: str
+    email: str
+    role: str
+    model_config = {
+        "from_attributes": True,
+    }
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+================================================================================
+FILE: app/modules/auth/service.py
+================================================================================
+from fastapi import HTTPException, status
+from sqlalchemy.orm import Session
+from app.core.security import (create_access_token, hash_password, verify_password,)
+from app.modules.auth.models import User
+from app.modules.auth.schemas import UserCreate
+
+def register_user(db: Session, payload: UserCreate,) -> User:
+
+    existing = (
+        db.query(User)
+        .filter(User.email == payload.email)
+        .first()
+    )
+
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El email ya está registrado",
+        )
+
+    user = User(
+        name=payload.name,
+        email=payload.email,
+        password_hash=hash_password(
+            payload.password
+        ),
+    )
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return user
+
+def login_user(db: Session, email: str, password: str,) -> str:
+
+    user = (
+        db.query(User)
+        .filter(User.email == email)
+        .first()
+    )
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales inválidas",
+        )
+        
+    if not verify_password(
+        password,
+        user.password_hash,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales inválidas",
+        )
+    return create_access_token({
+        "sub": str(user.id),
+    })
+
+================================================================================
+FILE: app/modules/categories/__pycache__/models.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/modules/categories/__pycache__/router.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/modules/categories/__pycache__/schemas.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/modules/categories/__pycache__/service.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/modules/categories/models.py
+================================================================================
+from datetime import datetime, timezone
+from sqlalchemy import DateTime, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column
+from app.database import Base
+
+class Category(Base):
+    __tablename__ = "categories"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        index=True,
+    )
+
+    name: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+    )
+
+    description: Mapped[str | None] = mapped_column(
+        String,
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+================================================================================
+FILE: app/modules/categories/router.py
+================================================================================
+from fastapi import APIRouter, Depends, status
+from sqlalchemy.orm import Session
+
+from app.dependencies.database import (
+    get_current_user,
+    get_db,
+)
+
+from app.modules.categories import service
+
+from app.modules.categories.schemas import (
+    CategoryCreate,
+    CategoryRead,
+    CategoryUpdate,
+)
+
+router = APIRouter(
+    prefix="/api/categories",
+    tags=["Categories"],
+)
+
+
+@router.get(
+    "/",
+    response_model=list[CategoryRead],
+)
+def list_categories(
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    return service.get_all(db)
+
+
+@router.get(
+    "/{category_id}",
+    response_model=CategoryRead,
+)
+def get_category(
+    category_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    return service.get_by_id(
+        db,
+        category_id,
+    )
+
+
+@router.post(
+    "/",
+    response_model=CategoryRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_category(
+    payload: CategoryCreate,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    return service.create(
+        db,
+        payload,
+    )
+
+
+@router.put(
+    "/{category_id}",
+    response_model=CategoryRead,
+)
+def update_category(
+    category_id: int,
+    payload: CategoryUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    return service.update(
+        db,
+        category_id,
+        payload,
+    )
+
+
+@router.delete(
+    "/{category_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_category(
+    category_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    service.delete(
+        db,
+        category_id,
+    )
+
+================================================================================
+FILE: app/modules/categories/schemas.py
+================================================================================
+from pydantic import BaseModel, Field
+
+
+class CategoryCreate(BaseModel):
+    name: str = Field(
+        min_length=2,
+        max_length=100,
+    )
+
+    description: str | None = Field(
+        default=None,
+        max_length=255,
+    )
+
+
+class CategoryUpdate(BaseModel):
+    name: str | None = Field(
+        default=None,
+        min_length=2,
+        max_length=100,
+    )
+
+    description: str | None = Field(
+        default=None,
+        max_length=255,
+    )
+
+
+class CategoryRead(BaseModel):
+    id: int
+    name: str
+    description: str | None
+
+    model_config = {
+        "from_attributes": True,
+    }
+
+================================================================================
+FILE: app/modules/categories/service.py
+================================================================================
+from fastapi import HTTPException, status
+from sqlalchemy.orm import Session
+
+from app.modules.categories.models import Category
+from app.modules.categories.schemas import (
+    CategoryCreate,
+    CategoryUpdate,
+)
+
+
+def get_all(
+    db: Session,
+) -> list[Category]:
+
+    return db.query(Category).all()
+
+
+def get_by_id(
+    db: Session,
+    category_id: int,
+) -> Category:
+
+    category = (
+        db.query(Category)
+        .filter(Category.id == category_id)
+        .first()
+    )
+
+    if not category:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Categoría no encontrada",
+        )
+
+    return category
+
+
+def create(
+    db: Session,
+    payload: CategoryCreate,
+) -> Category:
+
+    category = Category(
+        **payload.model_dump()
+    )
+
+    db.add(category)
+
+    db.commit()
+
+    db.refresh(category)
+
+    return category
+
+
+def update(
+    db: Session,
+    category_id: int,
+    payload: CategoryUpdate,
+) -> Category:
+
+    category = get_by_id(
+        db,
+        category_id,
+    )
+
+    update_data = payload.model_dump(
+        exclude_none=True
+    )
+
+    for field, value in update_data.items():
+        setattr(category, field, value)
+
+    db.commit()
+
+    db.refresh(category)
+
+    return category
+
+
+def delete(
+    db: Session,
+    category_id: int,
+) -> None:
+
+    category = get_by_id(
+        db,
+        category_id,
+    )
+
+    db.delete(category)
+
+    db.commit()
+
+================================================================================
+FILE: app/modules/orders/__pycache__/models.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/modules/orders/__pycache__/router.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/modules/orders/__pycache__/schemas.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/modules/orders/__pycache__/service.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/modules/orders/models.py
+================================================================================
+import enum
+
+from datetime import datetime, timezone
+
+from sqlalchemy import (
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+)
+
+from sqlalchemy.orm import (
+    Mapped,
+    mapped_column,
+    relationship,
+)
+
+from app.database import Base
+
+
+class OrderStatus(str, enum.Enum):
+    pending = "pending"
+    preparing = "preparing"
+    ready = "ready"
+    delivered = "delivered"
+
+
+VALID_TRANSITIONS = {
+    OrderStatus.pending: OrderStatus.preparing,
+    OrderStatus.preparing: OrderStatus.ready,
+    OrderStatus.ready: OrderStatus.delivered,
+    OrderStatus.delivered: None,
+}
+
+
+class Order(Base):
+    __tablename__ = "orders"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        index=True,
+    )
+
+    table_number: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+
+    status: Mapped[OrderStatus] = mapped_column(
+        Enum(OrderStatus),
+        default=OrderStatus.pending,
+    )
+
+    notes: Mapped[str | None] = mapped_column(
+        String,
+        nullable=True,
+    )
+
+    total: Mapped[float] = mapped_column(
+        Float,
+        default=0.0,
+    )
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"),
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    items = relationship(
+        "OrderItem",
+        back_populates="order",
+        cascade="all, delete-orphan",
+    )
+
+    user = relationship(
+        "User",
+    )
+
+
+class OrderItem(Base):
+    __tablename__ = "order_items"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        index=True,
+    )
+
+    order_id: Mapped[int] = mapped_column(
+        ForeignKey("orders.id"),
+    )
+
+    product_id: Mapped[int] = mapped_column(
+        ForeignKey("products.id"),
+    )
+
+    quantity: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+
+    unit_price: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+    )
+
+    subtotal: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+    )
+
+    order = relationship(
+        "Order",
+        back_populates="items",
+    )
+
+    product = relationship(
+        "Product",
+    )
+
+    @property
+    def product_name(self) -> str | None:
+        return (
+            self.product.name
+            if self.product
+            else None
+        )
+
+================================================================================
+FILE: app/modules/orders/router.py
+================================================================================
+from fastapi import (
+    APIRouter,
+    Depends,
+    status,
+)
+
+from sqlalchemy.orm import Session
+
+from app.dependencies.database import (
+    get_current_user,
+    get_db,
+)
+
+from app.modules.auth.models import User
+
+from app.modules.orders import service
+from app.modules.orders.models import OrderStatus
+
+from app.modules.orders.schemas import (
+    OrderCreate,
+    OrderEdit,
+    OrderRead,
+    OrderUpdateStatus,
+)
+
+router = APIRouter(
+    prefix="/api/orders",
+    tags=["Orders"],
+)
+
+
+@router.get(
+    "/",
+    response_model=list[OrderRead],
+)
+def list_orders(
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    return service.get_all(db)
+
+@router.get(
+    "/active",
+    response_model=list[OrderRead],
+)
+def active_orders(
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    return service.get_active_orders(db)
+
+@router.get(
+    "/status/{status}",
+    response_model=list[OrderRead],
+)
+def orders_by_status(
+    status: OrderStatus,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    return service.get_by_status(
+        db,
+        status,
+    )
+
+@router.get(
+    "/{order_id}",
+    response_model=OrderRead,
+)
+def get_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    return service.get_by_id(
+        db,
+        order_id,
+    )
+
+
+@router.post(
+    "/",
+    response_model=OrderRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_order(
+    payload: OrderCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return service.create(
+        db,
+        payload,
+        current_user.id,
+    )
+
+@router.patch(
+    "/{order_id}",
+    response_model=OrderRead,
+)
+def edit_order(
+    order_id: int,
+    payload: OrderEdit,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    return service.edit_order(
+        db,
+        order_id,
+        payload,
+    )
+
+@router.put(
+    "/{order_id}",
+    response_model=OrderRead,
+)
+def update_order_status(
+    order_id: int,
+    payload: OrderUpdateStatus,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    return service.update_status(
+        db,
+        order_id,
+        payload.status,
+    )
+
+
+@router.delete(
+    "/{order_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    service.delete(
+        db,
+        order_id,
+    )
+
+================================================================================
+FILE: app/modules/orders/schemas.py
+================================================================================
+from pydantic import BaseModel, Field
+from datetime import datetime
+from app.modules.orders.models import OrderStatus
+
+
+class OrderItemCreate(BaseModel):
+    product_id: int
+
+    quantity: int = Field(
+        gt=0,
+    )
+
+
+class OrderItemUpdate(BaseModel):
+    product_id: int
+
+    quantity: int = Field(
+        gt=0,
+    )
+
+
+class OrderCreate(BaseModel):
+    table_number: int = Field(
+        gt=0,
+    )
+
+    notes: str | None = None
+
+    items: list[OrderItemCreate]
+
+
+class OrderEdit(BaseModel):
+    table_number: int | None = None
+
+    notes: str | None = None
+
+    items: list[OrderItemUpdate] | None = None
+
+
+class OrderUpdateStatus(BaseModel):
+    status: OrderStatus
+
+
+class OrderItemRead(BaseModel):
+    id: int
+    product_id: int
+    product_name: str | None
+    quantity: int
+    unit_price: float
+    subtotal: float
+
+    model_config = {
+        "from_attributes": True,
+    }
+
+
+class OrderRead(BaseModel):
+    id: int
+    table_number: int
+    status: OrderStatus
+    total: float
+    notes: str | None
+    created_at: datetime
+    updated_at: datetime
+    items: list[OrderItemRead]
+
+    model_config = {
+        "from_attributes": True,
+    }
+
+================================================================================
+FILE: app/modules/orders/service.py
+================================================================================
+from fastapi import HTTPException, status
+
+from sqlalchemy.orm import (
+    Session,
+    joinedload,
+)
+
+from app.modules.orders.models import (
+    Order,
+    OrderItem,
+    OrderStatus,
+    VALID_TRANSITIONS,
+)
+
+from app.modules.orders.schemas import (
+    OrderCreate,
+    OrderEdit,
+)
+
+from app.modules.products.models import Product
+
+
+def get_all(
+    db: Session,
+) -> list[Order]:
+
+    return (
+        db.query(Order)
+        .options(
+            joinedload(Order.items)
+            .joinedload(OrderItem.product)
+        )
+        .all()
+    )
+
+def get_active_orders(
+    db: Session,
+) -> list[Order]:
+
+    return (
+        db.query(Order)
+        .options(
+            joinedload(Order.items)
+            .joinedload(OrderItem.product)
+        )
+        .filter(
+            Order.status != OrderStatus.delivered
+        )
+        .all()
+    )
+    
+def get_by_status(
+    db: Session,
+    status: OrderStatus,
+) -> list[Order]:
+
+    return (
+        db.query(Order)
+        .options(
+            joinedload(Order.items)
+            .joinedload(OrderItem.product)
+        )
+        .filter(
+            Order.status == status
+        )
+        .all()
+    )
+
+def get_by_id(
+    db: Session,
+    order_id: int,
+) -> Order:
+
+    order = (
+        db.query(Order)
+        .options(
+            joinedload(Order.items)
+            .joinedload(OrderItem.product)
+        )
+        .filter(Order.id == order_id)
+        .first()
+    )
+
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Pedido no encontrado",
+        )
+
+    return order
+
+
+def create(
+    db: Session,
+    payload: OrderCreate,
+    user_id: int,
+) -> Order:
+
+    if not payload.items:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La orden debe tener al menos un item",
+        )
+
+    try:
+
+        order = Order(
+            table_number=payload.table_number,
+            notes=payload.notes,
+            user_id=user_id,
+        )
+
+        db.add(order)
+
+        db.flush()
+
+        total = 0.0
+
+        for item_data in payload.items:
+
+            product = (
+                db.query(Product)
+                .filter(
+                    Product.id == item_data.product_id
+                )
+                .first()
+            )
+
+            if not product:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Producto {item_data.product_id} no encontrado",
+                )
+
+            if not product.available:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Producto '{product.name}' no está disponible",
+                )
+
+            subtotal = (
+                product.price
+                * item_data.quantity
+            )
+
+            total += subtotal
+
+            order_item = OrderItem(
+                order_id=order.id,
+                product_id=product.id,
+                quantity=item_data.quantity,
+                unit_price=product.price,
+                subtotal=subtotal,
+            )
+
+            db.add(order_item)
+
+        order.total = total
+
+        db.commit()
+
+        db.refresh(order)
+
+        return order
+
+    except Exception:
+        db.rollback()
+        raise
+
+def edit_order(
+    db: Session,
+    order_id: int,
+    payload: OrderEdit,
+) -> Order:
+
+    order = get_by_id(
+        db,
+        order_id,
+    )
+
+    if order.status == OrderStatus.delivered:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se puede editar una orden entregada",
+        )
+
+    if payload.table_number is not None:
+        order.table_number = payload.table_number
+
+    if payload.notes is not None:
+        order.notes = payload.notes
+
+    if payload.items is not None:
+
+        order.items.clear()
+
+        total = 0.0
+
+        for item_data in payload.items:
+
+            product = (
+                db.query(Product)
+                .filter(
+                    Product.id == item_data.product_id
+                )
+                .first()
+            )
+
+            if not product:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=(
+                        f"Producto "
+                        f"{item_data.product_id} "
+                        f"no encontrado"
+                    ),
+                )
+
+            if not product.available:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Producto "
+                        f"'{product.name}' "
+                        f"no disponible"
+                    ),
+                )
+
+            subtotal = (
+                product.price
+                * item_data.quantity
+            )
+
+            total += subtotal
+
+            item = OrderItem(
+                product_id=product.id,
+                quantity=item_data.quantity,
+                unit_price=product.price,
+                subtotal=subtotal,
+            )
+
+            order.items.append(item)
+
+        order.total = total
+
+    db.commit()
+
+    db.refresh(order)
+
+    return order
+
+def update_status(
+    db: Session,
+    order_id: int,
+    new_status: OrderStatus,
+) -> Order:
+
+    order = get_by_id(
+        db,
+        order_id,
+    )
+
+    expected_next = VALID_TRANSITIONS[
+        order.status
+    ]
+
+    if expected_next is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El pedido ya fue entregado",
+        )
+
+    if new_status != expected_next:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Transición inválida: "
+                f"{order.status} -> {new_status}. "
+                f"Esperado: {expected_next}"
+            ),
+        )
+
+    order.status = new_status
+
+    db.commit()
+
+    db.refresh(order)
+
+    return order
+
+
+def delete(
+    db: Session,
+    order_id: int,
+) -> None:
+
+    order = get_by_id(
+        db,
+        order_id,
+    )
+
+    if order.status == OrderStatus.delivered:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se puede eliminar un pedido entregado",
+        )
+
+    db.delete(order)
+
+    db.commit()
+
+================================================================================
+FILE: app/modules/products/__pycache__/models.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/modules/products/__pycache__/router.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/modules/products/__pycache__/schemas.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/modules/products/__pycache__/service.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/modules/products/models.py
+================================================================================
+from datetime import datetime, timezone
+
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+)
+
+from sqlalchemy.orm import (
+    Mapped,
+    mapped_column,
+    relationship,
+)
+
+from app.database import Base
+
+
+class Product(Base):
+    __tablename__ = "products"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        index=True,
+    )
+
+    name: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+    )
+
+    description: Mapped[str | None] = mapped_column(
+        String,
+        nullable=True,
+    )
+
+    price: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+    )
+
+    image_url: Mapped[str | None] = mapped_column(
+        String,
+        nullable=True,
+    )
+
+    available: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+    )
+
+    category_id: Mapped[int] = mapped_column(
+        ForeignKey("categories.id"),
+        nullable=False,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    category = relationship(
+        "Category",
+    )
+
+================================================================================
+FILE: app/modules/products/router.py
+================================================================================
+from fastapi import APIRouter, Depends, status
+from sqlalchemy.orm import Session
+
+from app.dependencies.database import (
+    get_current_user,
+    get_db,
+)
+
+from app.modules.products import service
+
+from app.modules.products.schemas import (
+    ProductCreate,
+    ProductRead,
+    ProductUpdate,
+)
+
+router = APIRouter(
+    prefix="/api/products",
+    tags=["Products"],
+)
+
+
+@router.get(
+    "/",
+    response_model=list[ProductRead],
+)
+def list_products(
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    return service.get_all(db)
+
+
+@router.get(
+    "/{product_id}",
+    response_model=ProductRead,
+)
+def get_product(
+    product_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    return service.get_by_id(
+        db,
+        product_id,
+    )
+
+
+@router.post(
+    "/",
+    response_model=ProductRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_product(
+    payload: ProductCreate,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    return service.create(
+        db,
+        payload,
+    )
+
+
+@router.put(
+    "/{product_id}",
+    response_model=ProductRead,
+)
+def update_product(
+    product_id: int,
+    payload: ProductUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    return service.update(
+        db,
+        product_id,
+        payload,
+    )
+
+
+@router.delete(
+    "/{product_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_product(
+    product_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    service.delete(
+        db,
+        product_id,
+    )
+
+================================================================================
+FILE: app/modules/products/schemas.py
+================================================================================
+from pydantic import BaseModel, Field
+
+
+class ProductCreate(BaseModel):
+    name: str = Field(
+        min_length=2,
+        max_length=100,
+    )
+
+    description: str | None = Field(
+        default=None,
+        max_length=255,
+    )
+
+    price: float = Field(
+        gt=0,
+    )
+
+    image_url: str | None = None
+
+    available: bool = True
+
+    category_id: int
+
+
+class ProductUpdate(BaseModel):
+    name: str | None = Field(
+        default=None,
+        min_length=2,
+        max_length=100,
+    )
+
+    description: str | None = Field(
+        default=None,
+        max_length=255,
+    )
+
+    price: float | None = Field(
+        default=None,
+        gt=0,
+    )
+
+    image_url: str | None = None
+
+    available: bool | None = None
+
+    category_id: int | None = None
+
+
+class ProductRead(BaseModel):
+    id: int
+    name: str
+    description: str | None
+    price: float
+    image_url: str | None
+    available: bool
+    category_id: int
+
+    model_config = {
+        "from_attributes": True,
+    }
+
+================================================================================
+FILE: app/modules/products/service.py
+================================================================================
+from fastapi import HTTPException, status
+from sqlalchemy.orm import Session
+
+from app.modules.categories.models import Category
+
+from app.modules.products.models import Product
+
+from app.modules.products.schemas import (
+    ProductCreate,
+    ProductUpdate,
+)
+
+
+def get_all(
+    db: Session,
+) -> list[Product]:
+
+    return db.query(Product).all()
+
+
+def get_by_id(
+    db: Session,
+    product_id: int,
+) -> Product:
+
+    product = (
+        db.query(Product)
+        .filter(Product.id == product_id)
+        .first()
+    )
+
+    if not product:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Producto no encontrado",
+        )
+
+    return product
+
+
+def create(
+    db: Session,
+    payload: ProductCreate,
+) -> Product:
+
+    category = (
+        db.query(Category)
+        .filter(Category.id == payload.category_id)
+        .first()
+    )
+
+    if not category:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Categoría no encontrada",
+        )
+
+    product = Product(
+        **payload.model_dump()
+    )
+
+    db.add(product)
+
+    db.commit()
+
+    db.refresh(product)
+
+    return product
+
+
+def update(
+    db: Session,
+    product_id: int,
+    payload: ProductUpdate,
+) -> Product:
+
+    product = get_by_id(
+        db,
+        product_id,
+    )
+
+    update_data = payload.model_dump(
+        exclude_none=True
+    )
+
+    # Validar FK si viene category_id
+    if "category_id" in update_data:
+
+        category = (
+            db.query(Category)
+            .filter(
+                Category.id == update_data["category_id"]
+            )
+            .first()
+        )
+
+        if not category:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Categoría no encontrada",
+            )
+
+    for field, value in update_data.items():
+        setattr(product, field, value)
+
+    db.commit()
+
+    db.refresh(product)
+
+    return product
+
+
+def delete(
+    db: Session,
+    product_id: int,
+) -> None:
+
+    product = get_by_id(
+        db,
+        product_id,
+    )
+
+    db.delete(product)
+
+    db.commit()
+
+================================================================================
+FILE: app/modules/users/__pycache__/router.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/modules/users/__pycache__/schemas.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/modules/users/__pycache__/service.cpython-312.pyc
+================================================================================
+[Archivo binario omitido]
+
+================================================================================
+FILE: app/modules/users/router.py
+================================================================================
+from fastapi import (
+    APIRouter,
+    Depends,
+)
+
+from sqlalchemy.orm import Session
+
+from app.dependencies.database import (
+    get_current_user,
+    get_db,
+)
+
+from app.modules.auth.models import User
+
+from app.modules.users import service
+
+from app.modules.users.schemas import (
+    UserProfileRead,
+    UserProfileUpdate,
+)
+
+router = APIRouter(
+    prefix="/api/users",
+    tags=["Users"],
+)
+
+
+@router.get(
+    "/me",
+    response_model=UserProfileRead,
+)
+def get_my_profile(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return service.get_profile(
+        db,
+        current_user.id,
+    )
+
+
+@router.put(
+    "/me",
+    response_model=UserProfileRead,
+)
+def update_my_profile(
+    payload: UserProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return service.update_profile(
+        db,
+        current_user.id,
+        payload,
+    )
+
+================================================================================
+FILE: app/modules/users/schemas.py
+================================================================================
+from pydantic import BaseModel, EmailStr, Field
+
+
+class UserProfileRead(BaseModel):
+    id: int
+    name: str
+    email: EmailStr
+    role: str
+    avatar_url: str | None = None
+
+    model_config = {
+        "from_attributes": True,
+    }
+
+
+class UserProfileUpdate(BaseModel):
+    name: str = Field(
+        min_length=2,
+        max_length=100,
+    )
+
+    email: EmailStr
+
+================================================================================
+FILE: app/modules/users/service.py
+================================================================================
+from fastapi import HTTPException, status
+
+from sqlalchemy.orm import Session
+
+from app.modules.auth.models import User
+
+from app.modules.users.schemas import (
+    UserProfileUpdate,
+)
+
+
+def get_profile(
+    db: Session,
+    user_id: int,
+) -> User:
+
+    user = (
+        db.query(User)
+        .filter(User.id == user_id)
+        .first()
+    )
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Usuario no encontrado",
+        )
+
+    return user
+
+
+def update_profile(
+    db: Session,
+    user_id: int,
+    payload: UserProfileUpdate,
+) -> User:
+
+    user = get_profile(
+        db,
+        user_id,
+    )
+
+    existing_user = (
+        db.query(User)
+        .filter(
+            User.email == payload.email,
+            User.id != user_id,
+        )
+        .first()
+    )
+
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El email ya está registrado",
+        )
+
+    user.name = payload.name
+    user.email = payload.email
+
+    db.commit()
+
+    db.refresh(user)
+
+    return user
+
+================================================================================
+FILE: app/seed.py
+================================================================================
+from app.database import SessionLocal, Base, engine
+
+from app.modules.auth.models import User
+from app.modules.categories.models import Category
+from app.modules.products.models import Product
+
+from app.core.security import hash_password
+
+
+def seed():
+
+    db = SessionLocal()
+
+    # crear tablas
+    Base.metadata.create_all(bind=engine)
+
+    # =========================
+    # USERS
+    # =========================
+
+    users = [
+        User(
+            name="Admin",
+            email="admin@test.com",
+            role="admin",
+            password_hash=hash_password("123456"),
+        ),
+        User(
+            name="Caja",
+            email="cashier@test.com",
+            role="cashier",
+            password_hash=hash_password("123456"),
+        ),
+        User(
+            name="Mesero",
+            email="waiter@test.com",
+            role="waiter",
+            password_hash=hash_password("123456"),
+        ),
+    ]
+
+    for user in users:
+        db.add(user)
+
+    db.commit()
+
+    # =========================
+    # CATEGORIES
+    # =========================
+
+    drinks = Category(
+        name="Bebidas",
+    )
+
+    coffee = Category(
+        name="Café",
+    )
+
+    desserts = Category(
+        name="Postres",
+    )
+
+    food = Category(
+        name="Comida",
+    )
+
+    db.add_all([
+        drinks,
+        coffee,
+        desserts,
+        food,
+    ])
+
+    db.commit()
+
+    db.refresh(drinks)
+    db.refresh(coffee)
+    db.refresh(desserts)
+    db.refresh(food)
+
+    # =========================
+    # PRODUCTS
+    # =========================
+
+    products = [
+
+        Product(
+            name="Espresso",
+            description="Café espresso",
+            price=45,
+            available=True,
+            category_id=coffee.id,
+        ),
+
+        Product(
+            name="Capuccino",
+            description="Capuccino clásico",
+            price=65,
+            available=True,
+            category_id=coffee.id,
+        ),
+
+        Product(
+            name="Latte",
+            description="Latte vainilla",
+            price=70,
+            available=True,
+            category_id=coffee.id,
+        ),
+
+        Product(
+            name="Cheesecake",
+            description="Cheesecake de frutos rojos",
+            price=90,
+            available=True,
+            category_id=desserts.id,
+        ),
+
+        Product(
+            name="Brownie",
+            description="Brownie chocolate",
+            price=55,
+            available=True,
+            category_id=desserts.id,
+        ),
+
+        Product(
+            name="Hamburguesa",
+            description="Hamburguesa clásica",
+            price=120,
+            available=True,
+            category_id=food.id,
+        ),
+
+        Product(
+            name="Papas fritas",
+            description="Orden grande",
+            price=60,
+            available=True,
+            category_id=food.id,
+        ),
+
+        Product(
+            name="Refresco",
+            description="Lata 355ml",
+            price=35,
+            available=True,
+            category_id=drinks.id,
+        ),
+    ]
+
+    db.add_all(products)
+
+    db.commit()
+
+    db.close()
+
+    print("Seed completado")
+
+
+if __name__ == "__main__":
+    seed()
